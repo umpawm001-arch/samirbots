@@ -14,7 +14,7 @@ from aiogram.types import (
 
 # === SOZLAMALAR ===
 TOKEN = "8987864536:AAGo8nHGwVumj_J_CGCjMqdV4GcgDv6LOf8"
-ADMIN_ID = 8878519140  # ID o'zgartirildi
+ADMIN_ID = 8878519140
 ADMIN_PASSWORD = "samir1234"
 CARD_NUMBER = "9860 1666 5619 0666"
 CARD_HOLDER = "K.U"
@@ -131,7 +131,7 @@ async def back_to_main(callback: CallbackQuery, state: FSMContext):
     caption = (
         f"✨ **SAMIR STORE - ASOSIY MENYU** 🚀\n\n"
         f"👋 Salom, **{name}**! 💎\n\n"
-        f"🔥 Bu PUBG Mobile va o'yin akkauntlari rasmiy do'koni boti! Kerakli bo'limni tanlang. ⚡️"
+        f"🔥 Bu PUBG Mobile va o'yin akkauntlari rasmiy do'koni boti! Kerakli bo'limni tanlang. ⚡️️"
     )
     await callback.message.answer(caption, reply_markup=main_menu(user_id), parse_mode="Markdown")
 
@@ -426,7 +426,7 @@ async def list_accounts(callback: CallbackQuery):
     await callback.message.answer_sticker(sticker=BUY_STICKER_ID)
 
     if not available_accs:
-        kb = [[InlineKeyboardButton(text="⬅️️ Bosh menyuga qaytish", callback_data="back_to_main")]]
+        kb = [[InlineKeyboardButton(text="⬅️ Bosh menyuga qaytish", callback_data="back_to_main")]]
         await callback.message.answer(
             text="😔 Hozircha sotuvda akkauntlar mavjud emas. Tez orada yangilari qo'shiladi! 🔥",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
@@ -566,7 +566,11 @@ async def show_admin_dashboard(message_or_callback, is_callback=False):
     else:
         klent_list_str += "Hozircha mijozlar yo'q.\n"
 
-    klent_list_str += "\n💡 *Mijozga xabar yuborish formatlari:*\n• `/klent1 Salom` yoki `/user ID Xabar`"
+    klent_list_str += (
+        "\n💡 **Admin buyruqlari:**\n"
+        "• Balansni o'zgartirish: `/[klent_kodi] +[summa]` (masalan: `/klent1 +40000` yoki `/klent1 -10000`)\n"
+        "• Xabar yuborish: `/[klent_kodi] Salom` yoki `/user [ID] Salom`"
+    )
 
     kb = [
         [InlineKeyboardButton(text="➕ Akkaunt qo'shish", callback_data="admin_add_acc")],
@@ -675,45 +679,77 @@ async def admin_panel_direct(callback: CallbackQuery, state: FSMContext):
     await show_admin_dashboard(callback, is_callback=True)
 
 
-# Klent kodi orqali xabar yuborish
+# ================= KLENT KODI ORQALI XABAR YUBORISH YOKI BALANSNI O'ZGARTIRISH =================
 @router.message(F.text.startswith("/klent"))
-async def admin_send_to_klent(message: Message):
+async def admin_manage_klent(message: Message):
     if message.from_user.id != ADMIN_ID:
         return
 
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
-        await message.reply("⚠ Xatolik! Format bunday bo'lishi kerak: `/klent1 Xabar`", parse_mode="Markdown")
+        await message.reply("⚠ Xatolik! Format:\n• Xabar yuborish: `/klent1 Salom`\n• Balans qo'shish: `/klent1 +40000`", parse_mode="Markdown")
         return
 
     klent_code_input = parts[0][1:]
-    admin_text = parts[1]
+    command_body = parts[1].strip()
 
     target_user_id = None
+    target_user_data = None
     for uid, udata in database["users"].items():
         if udata["klent_code"] == klent_code_input:
             target_user_id = uid
+            target_user_data = udata
             break
 
-    if target_user_id:
-        try:
-            await message.bot.send_message(chat_id=target_user_id, text=f"📦 **SAMIR STORE Adminidan xabar:** 🔔\n\n`{admin_text}`", parse_mode="Markdown")
-            await message.reply(f"✅ Xabar `/{klent_code_input}` ga yuborildi! 🚀")
-        except Exception as e:
-            await message.reply(f"❌ Xatolik yuz berdi: {e}")
-    else:
+    if not target_user_id:
         await message.reply(f"❌ Topilmadi: `/{klent_code_input}`", parse_mode="Markdown")
+        return
+
+    # Agar admin pul qo'shmoqchi yoki ayirmoqchi bo'lsa (masalan: +40000 yoki -10000 yoki shunchaki 40000)
+    cleaned_body = command_body.replace(" ", "")
+    if cleaned_body.startswith("+") or cleaned_body.startswith("-") or cleaned_body.isdigit():
+        try:
+            amount = int(cleaned_body)
+            target_user_data["balance"] += amount
+            new_balance = target_user_data["balance"]
+            
+            await message.reply(
+                f"✅ `/{klent_code_input}` (ID: `{target_user_id}`) balansiga **{amount:+,} so'm** qo'shildi!\n"
+                f"💰 Yangi balans: **{new_balance:,} so'm**",
+                parse_mode="Markdown"
+            )
+            # Mijozga ham xabar beramiz
+            try:
+                await message.bot.send_message(
+                    chat_id=target_user_id,
+                    text=f"🎁 **SAMIR STORE admini balansingizni o'zgartirdi!**\n\n"
+                         f"O'zgarish: **{amount:+,} so'm**\n"
+                         f"💰 Joriy balansingiz: **{new_balance:,} so'm** 🎉",
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                pass
+            return
+        except ValueError:
+            pass
+
+    # Agar matnli xabar bo'lsa
+    try:
+        await message.bot.send_message(chat_id=target_user_id, text=f"📦 **SAMIR STORE Adminidan xabar:** 🔔\n\n`{command_body}`", parse_mode="Markdown")
+        await message.reply(f"✅ Xabar `/{klent_code_input}` ga yuborildi! 🚀")
+    except Exception as e:
+        await message.reply(f"❌ Xatolik yuz berdi: {e}")
 
 
-# Telegram ID orqali shaxsiy xabar yuborish
+# Telegram ID orqali xabar yuborish yoki balansni o'zgartirish
 @router.message(F.text.startswith("/user"))
-async def admin_send_to_user_id(message: Message):
+async def admin_manage_user_id(message: Message):
     if message.from_user.id != ADMIN_ID:
         return
 
     parts = message.text.split(maxsplit=2)
     if len(parts) < 3:
-        await message.reply("⚠ Xatolik! Format bunday bo'lishi kerak: `/user 123456789 Salom`", parse_mode="Markdown")
+        await message.reply("⚠ Xatolik! Format: `/user 123456789 +40000` yoki `/user 123456789 Salom`", parse_mode="Markdown")
         return
 
     if not parts[1].isdigit():
@@ -721,10 +757,42 @@ async def admin_send_to_user_id(message: Message):
         return
 
     target_user_id = int(parts[1])
-    admin_text = parts[2]
+    command_body = parts[2].strip()
+
+    if target_user_id not in database["users"]:
+        await message.reply("❌ Bu ID egasi botda ro'yxatdan o'tmagan!")
+        return
+
+    target_user_data = database["users"][target_user_id]
+    cleaned_body = command_body.replace(" ", "")
+
+    if cleaned_body.startswith("+") or cleaned_body.startswith("-") or cleaned_body.isdigit():
+        try:
+            amount = int(cleaned_body)
+            target_user_data["balance"] += amount
+            new_balance = target_user_data["balance"]
+            
+            await message.reply(
+                f"✅ ID: `{target_user_id}` balansiga **{amount:+,} so'm** qo'shildi!\n"
+                f"💰 Yangi balans: **{new_balance:,} so'm**",
+                parse_mode="Markdown"
+            )
+            try:
+                await message.bot.send_message(
+                    chat_id=target_user_id,
+                    text=f"🎁 **SAMIR STORE admini balansingizni o'zgartirdi!**\n\n"
+                         f"O'zgarish: **{amount:+,} so'm**\n"
+                         f"💰 Joriy balansingiz: **{new_balance:,} so'm** 🎉",
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                pass
+            return
+        except ValueError:
+            pass
 
     try:
-        await message.bot.send_message(chat_id=target_user_id, text=f"📦 **SAMIR STORE Adminidan xabar:** 🔔\n\n`{admin_text}`", parse_mode="Markdown")
+        await message.bot.send_message(chat_id=target_user_id, text=f"📦 **SAMIR STORE Adminidan xabar:** 🔔\n\n`{command_body}`", parse_mode="Markdown")
         await message.reply(f"✅ Xabar `{target_user_id}` ID egasiga yuborildi! 🚀")
     except Exception as e:
         await message.reply(f"❌ Xatolik yuz berdi: {e}")
